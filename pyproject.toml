@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "opensearch-reindexer"
+version = "0.0.1"
+description = "`opensearch-reindex` is a Python library that serves to help streamline reindexing data from one OpenSearch index to another."
+authors = ["Kenton Parton <kknoxparton@gmail.com>"]
+readme = "README.md"
+packages = [{include = "opensearch_reindexer"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+typer = {extras = ["all"], version = "^0.7.0"}
+opensearch-py = "^1.0.0"
+
+[tool.poetry.scripts]
+reindexer = "opensearch_reindexer:app"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
