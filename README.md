@@ -42,15 +42,15 @@ When reindexing from one cluster to another, migrations should be run first (ste
 
 This will create a new revision file in `./migrations/versions`.
 
-Note: revisions files should not be removed and their names should not be changed.
+Note: revision files should not be removed and their names should not be changed.
 
 #### 6 Navigate to your revision file `./migrations/versions/1_my_revision_name.py` and set
 `SOURCE_INDEX`, `DESTINATION_INDEX`, you can optionally set `DESTINATION_MAPPINGS`.
 
-#### (Optional) 7. To modify documents as they are being reindexed to the destination index, update `def transform_document` accordingly
+#### (Optional) 7. To modify documents as they are being re-indexed to the destination index, update `def transform_document` accordingly
 
 #### 8. Run your migrations
 `reindexer run`
 
-Note: When `reindexer run` is executed, it will compare revision versions in `./migrations/versions/...` to the version number in `reindexer_version` index.
+Note: When `reindexer run` is executed, it will compare revision versions in `./migrations/versions/...` to the version number in `reindexer_version` index of the source cluster.
 All revisions that have not been run will be run one after another.
