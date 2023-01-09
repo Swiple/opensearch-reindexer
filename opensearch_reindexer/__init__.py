@@ -1,10 +1,9 @@
-import typer
 from pathlib import Path
-from opensearch_reindexer.base import BaseMigration
-from opensearchpy import OpenSearch
+
+import typer
 from rich import print
-import importlib.util
-import os
+
+from opensearch_reindexer.base import BaseMigration
 
 app = typer.Typer()
 
@@ -12,9 +11,9 @@ app = typer.Typer()
 @app.command()
 def init():
     """
-    Creates the folders and files needed by "opensearch-reindexer"
+    Initializes the necessary folders and files for "opensearch-reindexer".
 
-    Creates the following
+    This creates the following directories and files:
     migrations/
         env.py
         migration_template.py
@@ -24,11 +23,14 @@ def init():
             rename_username_field_3.py
     """
     # Create the directory if it doesn't exist
-    Path('./migrations').mkdir(parents=True, exist_ok=True)
-    Path('./migrations/__init__.py').write_text("")
-    Path('./migrations/versions').mkdir(parents=True, exist_ok=True)
-    Path('./migrations/migration_template.py').write_text("""from opensearch_reindexer.base import BaseMigration, Config
+    Path("./migrations").mkdir(parents=True, exist_ok=True)
+    Path("./migrations/__init__.py").write_text("")
+    Path("./migrations/versions").mkdir(parents=True, exist_ok=True)
+    Path("./migrations/migration_template.py").write_text(
+        """from opensearch_reindexer.base import BaseMigration, Config
 
+# number of documents to index at a time
+BATCH_SIZE = 1000
 SOURCE_INDEX = ""
 DESTINATION_INDEX = ""
 DESTINATION_MAPPINGS = None
@@ -43,10 +45,14 @@ class Migration(BaseMigration):
 config = Config(
     source_index=SOURCE_INDEX,
     destination_index=DESTINATION_INDEX,
+    batch_size=BATCH_SIZE,
 )
 Migration(config).reindex()
-    """)
-    Path('./migrations/env.py').write_text("""from opensearchpy import OpenSearch
+    """
+    )
+    Path("./migrations/env.py").write_text(
+        """from opensearchpy import OpenSearch
+
 
 OPENSEARCH_HOST = "localhost"
 OPENSEARCH_PORT = "9200"
@@ -67,14 +73,20 @@ source_client = OpenSearch(
 )
 
 destination_client = source_client
-    """)
+    """
+    )
 
 
 @app.command()
 def init_index():
-    source_client = dynamically_import_migrations()
+    """
+    Initializes the 'reindexer_version' index in the the 'source_client' with the highest local migration version number.
+    """
+    from opensearch_reindexer.db import dynamically_import_migrations
 
-    version_index = 'reindexer_version'
+    source_client, _ = dynamically_import_migrations()
+
+    version_index = "reindexer_version"
 
     if source_client.indices.exists(index=version_index):
         source_client.search(index=version_index)
@@ -87,10 +99,16 @@ def init_index():
     highest_version = BaseMigration().get_local_migration_version()
 
     if highest_version != 0:
-        print("Local revisions were detected. We assume you have migrated from one OpenSearch Cluster to another.")
+        print(
+            "Local revisions were detected. We assume you have migrated from one OpenSearch Cluster to another."
+        )
 
     print(f'"versionNum" was initialized to {highest_version}')
-    source_client.index(index=version_index, body={"versionNum": highest_version})
+    source_client.index(
+        index=version_index,
+        body={"versionNum": highest_version},
+        refresh="wait_for",
+    )
 
 
 @app.command()
@@ -101,29 +119,27 @@ def revision(m: str):
     :param m: string message to apply to the revision; this is the
      ``-m`` option to ``reindexer revision``.
     """
-    message = m.replace(' ', '_')
+    message = m.replace(" ", "_")
     BaseMigration.valid_file_name(message)
     BaseMigration().create_revision(message)
 
 
 @app.command()
+def list():
+    """
+    Lists revisions that have not been executed.
+    """
+    from opensearch_reindexer.db import dynamically_import_migrations
+
+    source_client, _ = dynamically_import_migrations()
+    revisions = BaseMigration().get_revisions_to_execute()
+    for rev in revisions:
+        print(rev)
+
+
+@app.command()
 def run():
     """
-    Runs 0 or many migrations
+    Runs 0 or many migrations returned by `BaseMigration().get_revisions_to_execute()
     """
     BaseMigration().handle_migration()
-
-
-def dynamically_import_migrations() -> OpenSearch:
-    # Obtain the file's path
-    current_working_dir = os.getcwd()
-    file_path = os.path.join(current_working_dir, 'migrations', 'env.py')
-
-    # Create a ModuleSpec object
-    spec = importlib.util.spec_from_file_location('env', file_path)
-
-    # Load the module
-    env = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(env)
-
-    return env.source_client
