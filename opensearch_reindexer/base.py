@@ -2,18 +2,29 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
 
+import opensearchpy.exceptions
 import typer
+from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 from rich import print
 
 
+class Language(Enum):
+    python = "python"
+    painless = "painless"
+
+
 @dataclass
 class Config:
-    source_index: str
-    destination_index: str
-    destination_mappings: str = None
+    source_index: str = None
+    destination_index: str = None
     batch_size: int = 1000
+    destination_index_body: Optional[dict] = None
+    language: Language = Language.painless
+    reindex_body: dict = None
 
 
 class BaseMigration:
@@ -27,8 +38,12 @@ class BaseMigration:
 
         source_client, destination_client = dynamically_import_migrations()
 
-        self.source_client = source_client
-        self.destination_client = destination_client
+        self.source_client: OpenSearch = source_client
+        self.destination_client: OpenSearch = destination_client
+
+        if config and config.language == Language.painless:
+            config.source_index = config.reindex_body["source"]["index"]
+            config.destination_index = config.reindex_body["dest"]["index"]
 
     def get_revision_num_document(self):
         # Query the "reindexer_version" index and return the first document
@@ -68,14 +83,14 @@ class BaseMigration:
 
             if len(revision_files) == 0:
                 print(
-                    'No file exist in "./migrations/versions". Create a revision by running:\n"reindexer revision"'
+                    'No files exist in "./migrations/versions". Create a revision by running:\n"reindexer revision"'
                 )
-                raise typer.Exit()
+                raise typer.Exit(1)
         except FileNotFoundError:
             print(
                 'The following need to be done before "reindexer list" can be run:\n1. Run "reindexer init"\n2. Run "reindexer init-index"\n3. Configure source_client in "./migrations/env.py"'
             )
-            raise typer.Exit()
+            raise typer.Exit(1)
         remote_version_num = self.get_remote_version_num()
 
         # Get revisions that need to be executed
@@ -112,12 +127,35 @@ class BaseMigration:
             )
             self.source_client.indices.create(
                 index=self.config.destination_index,
-                body=self.config.destination_mappings,
+                body=self.config.destination_index_body,
             )
 
+        if self.config.language == Language.painless:
+            self.reindex_painless()
+        else:
+            self.reindex_python()
+        print(
+            f'Reindex from "{self.config.source_index}" to "{self.config.destination_index}" complete'
+        )
+
+    def reindex_painless(self):
+        try:
+            response = self.source_client.reindex(
+                body=self.config.reindex_body,
+                refresh=True,
+            )
+            print(response)
+        except opensearchpy.exceptions.RequestError as e:
+            print(e)
+            raise e
+
+    def reindex_python(self):
         # Init scroll by search
         data = self.source_client.search(
-            index=self.config.source_index, scroll="2m", size=1000, body={}
+            index=self.config.source_index,
+            scroll="2m",
+            size=self.config.batch_size,
+            body={},
         )
 
         # Get the scroll ID
@@ -154,9 +192,6 @@ class BaseMigration:
             scroll_size = len(data["hits"]["hits"])
 
         self.source_client.clear_scroll(scroll_id=sid)
-        print(
-            f'Reindex from "{self.config.source_index}" to "{self.config.destination_index}" complete'
-        )
 
     def handle_migration(self):
         revisions_to_execute = self.get_revisions_to_execute()
@@ -203,9 +238,9 @@ class BaseMigration:
     def valid_file_name(file_name: str):
         if file_name.count(".") > 2:
             print(f'[bold red]found dots or numbers in file "{file_name}"[/bold red]')
-            raise typer.Exit()
+            raise typer.Exit(1)
 
-    def create_revision(self, m: str):
+    def create_revision(self, m: str, l: Language = Language.painless):
         highest_version = self.get_local_migration_version()
 
         # Create a new migration file with the next highest version number
@@ -213,5 +248,6 @@ class BaseMigration:
 
         # create revision file
         revision_file_name = f"migrations/versions/{new_version}_{m}.py"
-        shutil.copy(f"migrations/migration_template.py", revision_file_name)
+
+        shutil.copy(f"migrations/migration_template_{l.value}.py", revision_file_name)
         return revision_file_name

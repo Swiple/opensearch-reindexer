@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
+from typing import Union, Literal
 
 import typer
 from rich import print
 
-from opensearch_reindexer.base import BaseMigration
+from opensearch_reindexer.base import BaseMigration, Language
 
 app = typer.Typer()
 
@@ -16,7 +18,8 @@ def init():
     This creates the following directories and files:
     migrations/
         env.py
-        migration_template.py
+        migration_template_python.py
+        migration_template_painless.py
         versions/
             add_account_1.py
             add_order_id_2.py
@@ -26,14 +29,14 @@ def init():
     Path("./migrations").mkdir(parents=True, exist_ok=True)
     Path("./migrations/__init__.py").write_text("")
     Path("./migrations/versions").mkdir(parents=True, exist_ok=True)
-    Path("./migrations/migration_template.py").write_text(
-        """from opensearch_reindexer.base import BaseMigration, Config
+    Path("./migrations/migration_template_python.py").write_text(
+        """from opensearch_reindexer.base import BaseMigration, Config, Language
 
 # number of documents to index at a time
 BATCH_SIZE = 1000
 SOURCE_INDEX = ""
 DESTINATION_INDEX = ""
-DESTINATION_MAPPINGS = None
+DESTINATION_INDEX_BODY = None
 
 
 class Migration(BaseMigration):
@@ -46,9 +49,29 @@ config = Config(
     source_index=SOURCE_INDEX,
     destination_index=DESTINATION_INDEX,
     batch_size=BATCH_SIZE,
+    destination_index_body=DESTINATION_INDEX_BODY,
+    language=Language.python,
 )
 Migration(config).reindex()
     """
+    )
+    Path("./migrations/migration_template_painless.py").write_text(
+        """from opensearch_reindexer.base import BaseMigration, Config, Language
+
+REINDEX_BODY = {
+    "source": {"index": "source"},
+    "dest": {"index": "destination"},
+}
+DESTINATION_INDEX_BODY = None
+
+
+config = Config(
+    reindex_body=REINDEX_BODY,
+    destination_index_body=DESTINATION_INDEX_BODY,
+    language=Language.painless,
+)
+BaseMigration(config).reindex()
+        """
     )
     Path("./migrations/env.py").write_text(
         """from opensearchpy import OpenSearch
@@ -80,18 +103,24 @@ destination_client = source_client
 @app.command()
 def init_index():
     """
-    Initializes the 'reindexer_version' index in the the 'source_client' with the highest local migration version number.
+    Initializes the 'reindexer_version' index in the 'source_client' with the highest local revision version number.
     """
+    # First check if `reindexer init` has been run.
+    if not os.path.exists("migrations/versions"):
+        print(
+            'No migrations/versions directory found.\n\nInitialize your project first:\n1. "reindexer init"'
+        )
+        raise typer.Exit(1)
+
     from opensearch_reindexer.db import dynamically_import_migrations
 
     source_client, _ = dynamically_import_migrations()
-
     version_index = "reindexer_version"
 
     if source_client.indices.exists(index=version_index):
         source_client.search(index=version_index)
         print(f'[bold red]Index "{version_index}" already exists[/bold red]')
-        raise typer.Exit()
+        raise typer.Exit(1)
 
     source_client.indices.create(
         index=version_index,
@@ -112,22 +141,32 @@ def init_index():
 
 
 @app.command()
-def revision(m: str):
+def revision(
+    message: str,
+    language: str = Language.painless.value,
+):
     """
     Creates a new revision/migration file.
 
-    :param m: string message to apply to the revision; this is the
-     ``-m`` option to ``reindexer revision``.
+    :param message: string message to apply to the revision; this is the
+     ``message`` option to ``reindexer revision``.
+     :param language: Language - An enum value that controls whether reindexing
+        should be performed natively by OpenSearch or by Python locally
     """
-    message = m.replace(" ", "_")
+    try:
+        lang = Language[language]
+    except KeyError:
+        print(f'Expected a language of "painless" or "python" but got {language}')
+        raise typer.Exit(1)
+    message = message.replace(" ", "_")
     BaseMigration.valid_file_name(message)
-    BaseMigration().create_revision(message)
+    BaseMigration().create_revision(message, lang)
 
 
 @app.command()
 def list():
     """
-    Lists revisions that have not been executed.
+    Returns ordered list of revisions that have not been executed.
     """
     from opensearch_reindexer.db import dynamically_import_migrations
 
