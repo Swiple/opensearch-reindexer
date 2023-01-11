@@ -7,7 +7,7 @@ index to another using either the native OpenSearch Reindex API or Python, the O
 * Native OpenSearch Reindex API and Python based reindexing using OpenSearch Scroll API
 * Migrate data from one index to another in the same cluster
 * Migrate data from one index to another in a different cluster
-* Revision history
+* Migration history
 * Run multiple migrations one after another
 * Transform documents using native OpenSearch Reindex API or Python using Scoll API and Bulk inserts
 * Source indices/data is never modified or removed

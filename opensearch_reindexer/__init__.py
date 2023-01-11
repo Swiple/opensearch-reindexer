@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Union, Literal
+from typing import Literal, Union
 
 import typer
 from rich import print
