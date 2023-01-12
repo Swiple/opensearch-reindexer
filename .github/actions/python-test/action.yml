@@ -12,7 +12,9 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: make install
+      run: |
+        python -m pip install --upgrade pip poetry
+        make install
 
     - name: Test with pytest
       shell: bash
