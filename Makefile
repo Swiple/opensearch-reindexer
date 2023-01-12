@@ -6,7 +6,10 @@ lint:
 	black ./opensearch_reindexer ./tests/e2e
 
 up:
-	docker-compose up
+	docker-compose up -d
+
+down:
+	docker-compose down
 
 test:
 	pytest --cov ./opensearch_reindexer --cov-report=term-missing --cov-report=xml -s
