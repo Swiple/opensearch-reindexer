@@ -9,7 +9,7 @@ up:
 	docker-compose up
 
 test:
-	pytest --cov ./opensearch_reindexer --cov-report=term-missing -s
+	pytest --cov ./opensearch_reindexer --cov-report=term-missing --cov-report=xml -s
 
 publish:
 	poetry build
