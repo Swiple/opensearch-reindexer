@@ -19,7 +19,7 @@ jobs:
       - name: Start OpenSearch containers
         run: make up
 
-      - name: Run tests
+      - name: Run opensearch-reindexer Tests
         uses: ./.github/actions/python-test
 
       - uses: codecov/codecov-action@v3
