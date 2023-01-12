@@ -1,4 +1,6 @@
 # opensearch-reindexer
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/Swiple/opensearch-reindexer/graphs/commit-activity)
+[![codecov](https://codecov.io/gh/Swiple/opensearch-reindexer/branch/main/graph/badge.svg?token=PA9WIZYX5Q)](https://codecov.io/gh/Swiple/opensearch-reindexer)
 
 `opensearch-reindexer` is a Python library that serves to help streamline reindexing data from one OpenSearch 
 index to another using either the native OpenSearch Reindex API or Python, the OpenSearch Scroll API and Bulk inserts.

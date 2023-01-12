@@ -1,0 +1,34 @@
+name: Run tests
+
+on:
+  pull_request:
+    branches:
+      - "*"
+  push:
+    branches:
+      - "main"
+
+jobs:
+  e2e-test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Start OpenSearch containers
+        run: make up
+
+      - name: Run opensearch-reindexer Tests
+        uses: ./.github/actions/python-test
+
+      - uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          verbose: true
+
+      - name: Stop containers
+        if: always()
+        run: make down
