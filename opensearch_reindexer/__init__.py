@@ -52,7 +52,11 @@ config = Config(
     destination_index_body=DESTINATION_INDEX_BODY,
     language=Language.python,
 )
-Migration(config).reindex()
+
+
+def reindex():
+    Migration(config).reindex()
+
     """
     )
     Path("./migrations/migration_template_painless.py").write_text(
@@ -70,7 +74,11 @@ config = Config(
     destination_index_body=DESTINATION_INDEX_BODY,
     language=Language.painless,
 )
-BaseMigration(config).reindex()
+
+
+def reindex():
+    BaseMigration(config).reindex()
+
         """
     )
     Path("./migrations/env.py").write_text(
@@ -129,7 +137,10 @@ def init_index():
 
     if highest_version != 0:
         print(
-            "Local revisions were detected. We assume you have migrated from one OpenSearch Cluster to another."
+            "Local revisions were detected. If the destination index from your most recent revision "
+            "does not exist, this tells us you are initiating a project for the first time — we will create the"
+            "destination index during 'reindexer run'. If the destination index already exists, this tells us you "
+            "have migrated to a new OpenSearch cluster. In this case, nothing will happen when you run 'reindexer run'."
         )
 
     print(f'"versionNum" was initialized to {highest_version}')
@@ -172,6 +183,11 @@ def list():
 
     source_client, _ = dynamically_import_migrations()
     revisions = BaseMigration().get_revisions_to_execute()
+
+    if len(revisions) == 0:
+        print("You are up to date. No revisions need to be executed.")
+        raise typer.Exit()
+
     for rev in revisions:
         print(rev)
 

@@ -17,7 +17,7 @@ REINDEXER_REVISION_3 = "reindexer_revision_3"
 
 
 @pytest.fixture()
-def set_up():
+def clean_up():
     source_client = get_os_client()
     delete_index(source_client, REINDEXER_VERSION)
     delete_index(source_client, REINDEXER_SOURCE_INDEX)
@@ -25,14 +25,112 @@ def set_up():
     delete_index(source_client, REINDEXER_REVISION_2)
     delete_index(source_client, REINDEXER_REVISION_3)
 
-    load_reindexer_source_index(source_client, REINDEXER_SOURCE_INDEX)
-
     if os.path.exists("./migrations"):
         shutil.rmtree("./migrations")
 
 
+@pytest.fixture()
+def load_data():
+    source_client = get_os_client()
+    load_reindexer_source_index(source_client, REINDEXER_SOURCE_INDEX)
+
+
 class TestOpensearchReindexer:
-    def test_setup_and_run_revisions_python(self, set_up):
+    def test_should_create_destination_index_and_set_to_latest_revision_version_python(self, clean_up):
+        # if revision files exist, reindexer_version index does not exist and the latest revision destination index does
+        # not exist, this tells us a project is being initialized for the first time and we want to create the
+        # destination index
+        import opensearch_reindexer as osr
+
+        source_client = get_os_client()
+
+        osr.init()
+
+        # verify that "reindexer_version" index is initialized to version 0 when no revisions exist
+        osr.init_index()
+        assert search(
+            client=source_client,
+            index=REINDEXER_VERSION,
+        ) == {"versionNum": 0}
+
+        # create revisions
+        osr.revision("revision_1", str(Language.python.value))
+        osr.revision("revision_2", str(Language.python.value))
+        osr.revision("revision_3", str(Language.python.value))
+
+        delete_index(source_client, REINDEXER_VERSION)
+
+        osr.init_index()
+        assert search(
+            client=source_client,
+            index=REINDEXER_VERSION,
+        ) == {"versionNum": 3}
+
+        modify_revision_files_python()
+
+        osr.run()
+
+        assert source_client.indices.exists(REINDEXER_REVISION_3)
+
+        assert source_client.indices.get_mapping(index=REINDEXER_REVISION_3) == {
+            "reindexer_revision_3": {
+                "mappings": {
+                    "properties": {
+                        "a": {"type": "long"},
+                        "c": {"type": "text"},
+                    }
+                }
+            }
+        }
+
+    def test_should_create_destination_index_and_set_to_latest_revision_version_painless(self, clean_up):
+        # if revision files exist, reindexer_version index does not exist and the latest revision destination index does
+        # not exist, this tells us a project is being initialized for the first time and we want to create the
+        # destination index
+        import opensearch_reindexer as osr
+
+        source_client = get_os_client()
+
+        osr.init()
+
+        # verify that "reindexer_version" index is initialized to version 0 when no revisions exist
+        osr.init_index()
+        assert search(
+            client=source_client,
+            index=REINDEXER_VERSION,
+        ) == {"versionNum": 0}
+
+        # create revisions
+        osr.revision("revision_1", str(Language.painless.value))
+        osr.revision("revision_2", str(Language.painless.value))
+        osr.revision("revision_3", str(Language.painless.value))
+
+        delete_index(source_client, REINDEXER_VERSION)
+
+        osr.init_index()
+        assert search(
+            client=source_client,
+            index=REINDEXER_VERSION,
+        ) == {"versionNum": 3}
+
+        modify_revision_files_painless()
+
+        osr.run()
+
+        assert source_client.indices.exists(REINDEXER_REVISION_3)
+
+        assert source_client.indices.get_mapping(index=REINDEXER_REVISION_3) == {
+            "reindexer_revision_3": {
+                "mappings": {
+                    "properties": {
+                        "a": {"type": "long"},
+                        "c": {"type": "text"},
+                    }
+                }
+            }
+        }
+
+    def test_setup_and_run_revisions_python(self, clean_up, load_data):
         import opensearch_reindexer as osr
 
         source_client = get_os_client()
@@ -93,7 +191,7 @@ class TestOpensearchReindexer:
             index=REINDEXER_VERSION,
         ) == {"versionNum": 3}
 
-    def test_setup_and_run_revisions_painless(self, set_up):
+    def test_setup_and_run_revisions_painless(self, clean_up, load_data):
         import opensearch_reindexer as osr
 
         source_client = get_os_client()
@@ -207,6 +305,14 @@ def modify_revision_files_python():
             ["return doc", revision_two_code],
         ],
     )
+    revision_three_mappings = {
+        "mappings": {
+            "properties": {
+                "a": {"type": "long"},
+                "c": {"type": "text"},
+            }
+        }
+    }
     revision_three_code = """
             del doc['b']
             return doc
@@ -218,6 +324,10 @@ def modify_revision_files_python():
             [
                 'DESTINATION_INDEX = ""',
                 f"DESTINATION_INDEX = '{REINDEXER_REVISION_3}'",
+            ],
+            [
+                "DESTINATION_INDEX_BODY = None",
+                f"DESTINATION_INDEX_BODY = {revision_three_mappings}",
             ],
             ["return doc", revision_three_code],
         ],
@@ -293,6 +403,14 @@ ctx._source.c = jsonString;
         ],
     )
 
+    revision_three_mappings = {
+        "mappings": {
+            "properties": {
+                "a": {"type": "long"},
+                "c": {"type": "text"},
+            }
+        }
+    }
     painless_script = str(
         {"script": {"lang": "painless", "source": "ctx._source.remove('b')"}}
     )
@@ -303,6 +421,10 @@ ctx._source.c = jsonString;
             [
                 reindex_body_destination,
                 f'"dest": {{"index": "{REINDEXER_REVISION_3}"}},\n{painless_script[1:-1]}',
+            ],
+            [
+                "DESTINATION_INDEX_BODY = None",
+                f"DESTINATION_INDEX_BODY = {revision_three_mappings}",
             ],
         ],
     )

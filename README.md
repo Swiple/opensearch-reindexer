@@ -41,7 +41,7 @@ This will use your `source_client` to create a new index named 'reindexer_versio
 When reindexing from one cluster to another, migrations should be run first (step 8) before initializing the destination cluster with:
 `reindexer init-index`
 
-### 5. Create revision
+### 5. Create revision (repeat if you have multiple indices)
 Two revision types are supported, `painless` which uses the native OpenSearch Reindex API, and `python` which using
 the OpenSearch Scroll API and Bulk inserts. `painless` revisions are recommended as they are more performant than 
 `python` revisions. You don't have to use one or the other; `./migrations/versions/` can contain a combination of 
@@ -66,7 +66,10 @@ You can modify them if you find yourself making the same changes to revision fil
 Navigate to your revision file `./migrations/versions/1_my_revision_name.py`
 
 #### Painless
+
 Modify `source` and `destination` in `REINDEX_BODY`, you can optionally set `DESTINATION_MAPPINGS`.
+
+Note: If you only want to create the index, set the source index to `None` e.g. `"source": {"index": "reindexer_revision_1"},`
 
 To transform data as data is reindexed, you can use 
 painless scripts. For example, the following will convert data in field "c" from an object to a JSON string 
@@ -100,6 +103,8 @@ For more information on `REINDEX_BODY` see https://opensearch.org/docs/latest/op
 #### Python
 Modify `SOURCE_INDEX` and `DESTINATION_INDEX`, you can optionally set `DESTINATION_MAPPINGS`.
 
+Note: If you only want to create the index, set the source index to `None` e.g. `"source": {"index": "reindexer_revision_1"},`
+
 To modify documents as they are being re-indexed to the destination index, update `def transform_document`. For example:
 ```python
 class Migration(BaseMigration):
@@ -117,3 +122,27 @@ class Migration(BaseMigration):
 
 Note: When `reindexer run` is executed, it will compare revision versions in `./migrations/versions/...` to the version number in `reindexer_version` index of the source cluster.
 All revisions that have not been run will be run one after another. 
+
+
+## FAQ 💬 🙋 
+#### How do I start using `OpenSearch reindexer` in a new project?
+To get started with `OpenSearch reindexer` in a new project, simply follow the getting started guide above.
+
+#### What happens if multiple revisions need to be executed?
+`OpenSearch reindexer` compares the remote version in the `reindexer_version` index on your OpenSearch cluster to your local version. 
+Any versions local revisions that have not been executed will be executed one after another.
+
+#### What if I have multiple indices?
+Create a revision for each index and follow the same steps as you would for one index.
+
+#### How do I migrate from another schema management tool to `OpenSearch reindexer`?
+In this answer, we assume that you already have 1 or many indices.
+
+Complete steps 1 - 6 of the getting started guide, repeating steps 5 and 6 for each index. During step 6, set your source index to `None`.
+This will tell `OpenSearch reindexer` to just create the index.
+
+#### What happens when someone downloads my project that uses `OpenSearch reindexer` for the first time and revisions already exist?
+If the project points to an OpenSearch cluster that has an up-to-date `reindexer_version` index, then nothing will happen the next time `reindexer run` is executed.
+
+If the person downloading the project points to a different OpenSearch cluster that hasn't been initialized yet, they should run `reindexer init-index` to create and initialize
+`reindexer_version` index followed by `reindexer run`. This will then run all migrations one after the other.
