@@ -126,23 +126,26 @@ All revisions that have not been run will be run one after another.
 
 ## FAQ 💬 🙋 
 #### How do I start using `OpenSearch reindexer` in a new project?
-To get started with `OpenSearch reindexer` in a new project, simply follow the getting started guide above.
+To start using `OpenSearch reindexer`, simply follow the steps outlined in the getting started guide.
 
 #### What happens if multiple revisions need to be executed?
 `OpenSearch reindexer` compares the remote version in the `reindexer_version` index on your OpenSearch cluster to your local version. 
-Any versions local revisions that have not been executed will be executed one after another.
+Any versions that have not been executed will be executed one after another.
 
-#### What if I have multiple indices?
-Create a revision for each index and follow the same steps as you would for one index.
+#### How to handle multiple indices?
+Create a revision for each index and follow the same steps as you would for a single index.
 
 #### How do I migrate from another schema management tool to `OpenSearch reindexer`?
-In this answer, we assume that you already have 1 or many indices.
+To migrate to `OpenSearch reindexer`, follow steps 1-6 in the getting started guide, repeating steps 5 and 6 for each 
+index. Set the source index to None during step 6 to create the destination index if it doesn't exist, or if it already 
+exists, proceed to the next revision.
 
-Complete steps 1 - 6 of the getting started guide, repeating steps 5 and 6 for each index. During step 6, set your source index to `None`.
-This will tell `OpenSearch reindexer` to just create the index.
+#### Downloading a project that uses `OpenSearch reindexer`
+If the `reindexer_version` index on the OpenSearch cluster is up-to-date, running `reindexer run` won't do anything.
+However, if the OpenSearch cluster hasn't been initialized, run `reindexer init-index` followed by `reindexer run` to 
+create and initialize the `reindexer_version` index and run all migrations.
 
-#### What happens when someone downloads my project that uses `OpenSearch reindexer` for the first time and revisions already exist?
-If the project points to an OpenSearch cluster that has an up-to-date `reindexer_version` index, then nothing will happen the next time `reindexer run` is executed.
+#### Reindexing data from one OpenSearch cluster to another
+Follow the same steps for reindexing data to the same cluster, but update the "destination_client" in `./migrations/env.py`.
 
-If the person downloading the project points to a different OpenSearch cluster that hasn't been initialized yet, they should run `reindexer init-index` to create and initialize
-`reindexer_version` index followed by `reindexer run`. This will then run all migrations one after the other.
+Once you have reindexed all indices from one cluster to another, update the source and destination clients.

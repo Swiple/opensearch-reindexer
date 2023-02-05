@@ -3,10 +3,9 @@ import re
 import shutil
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 
 import opensearchpy.exceptions
-import typer
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 from rich import print
@@ -36,10 +35,11 @@ class BaseMigration:
 
         from opensearch_reindexer.db import dynamically_import_migrations
 
-        source_client, destination_client = dynamically_import_migrations()
+        source_client, destination_client, version_control_index = dynamically_import_migrations()
 
         self.source_client: OpenSearch = source_client
         self.destination_client: OpenSearch = destination_client
+        self.version_control_index: str = version_control_index
 
         if config and config.language == Language.painless:
             config.source_index = config.reindex_body["source"]["index"]
@@ -55,7 +55,7 @@ class BaseMigration:
         # Query the "reindexer_version" index and return the first document
         query = {"query": {"match_all": {}}, "size": 1}
         search_response = self.source_client.search(
-            index="reindexer_version", body=query
+            index=self.version_control_index, body=query
         )
         return search_response["hits"]["hits"][0]
 
@@ -63,19 +63,37 @@ class BaseMigration:
         """
         Update the migration version in the revision_num document.
         """
-
         remote_revision_num_document = self.get_revision_num_document()
         remote_revision_num_document_id = remote_revision_num_document["_id"]
 
-        document = self.source_client.update(
-            index="reindexer_version",
+        self.source_client.index(
+            index=self.version_control_index,
             id=remote_revision_num_document_id,
-            body={"doc": {"versionNum": new_version}},
+            body={"versionNum": new_version},
             refresh="wait_for",
-            _source=True,
-        )["get"]
+        )
+
+        source_host = self.source_client.transport.hosts[0]["host"]
+        destination_host = self.destination_client.transport.hosts[0]["host"]
+
+        # Check if we are reindexing from one cluster to another
+        if source_host != destination_host:
+            print(
+                f"You have reindexed from one cluster to another. We will update '{self.version_control_index}' in both clusters."
+            )
+            self.destination_client.indices.create(
+                index=self.version_control_index, ignore=400
+            )
+
+            self.destination_client.index(
+                index=self.version_control_index,
+                id=remote_revision_num_document_id,
+                body={"versionNum": new_version},
+                refresh="wait_for",
+            )
+
         print(
-            f'"versionNum" updated from {remote_revision_num_document["_source"]["versionNum"]} to {document["_source"]["versionNum"]}'
+            f'"versionNum" was updated from {remote_revision_num_document["_source"]["versionNum"]} to {new_version}'
         )
 
     def get_remote_version_num(self) -> int:
@@ -83,30 +101,33 @@ class BaseMigration:
         # Get the "versionNum" field from the first document
         return int(reindexer_num_source["versionNum"])
 
-    def get_revisions_to_execute(self) -> list[str]:
+    def get_revisions_to_execute(self) -> List[str]:
         try:
             revision_files = self.get_revisions()
-
-            if len(revision_files) == 0:
+            if not revision_files:
                 print(
-                    'No files exist in "./migrations/versions". Create a revision by running:\n"reindexer revision"'
-                )
-                raise typer.Exit(1)
+                    'No revision files found in "./migrations/versions".\nPlease create one by running: "reindexer revision"')
+                exit(1)
+
+            remote_version_num = self.get_remote_version_num()
+            revisions_to_execute = [
+                file for file in revision_files
+                if int(re.search(r"\d+", file).group()) > remote_version_num
+            ]
+
+            if not revisions_to_execute:
+                print('No new revisions found.')
+                exit(1)
+
+            return revisions_to_execute
         except FileNotFoundError:
             print(
-                'The following need to be done before "reindexer list" can be run:\n1. Run "reindexer init"\n2. Run "reindexer init-index"\n3. Configure source_client in "./migrations/env.py"'
+                'Please perform the following steps before running "reindexer list":\n'
+                '1. Run "reindexer init"\n'
+                '2. Run "reindexer init-index"\n'
+                '3. Configure source_client in "./migrations/env.py"'
             )
-            raise typer.Exit(1)
-        remote_version_num = self.get_remote_version_num()
-
-        # Get revisions that need to be executed
-        revisions_to_execute = []
-        for file in revision_files:
-            version = int(re.search(r"\d+", file).group())
-            if version > remote_version_num:
-                revisions_to_execute.append(file)
-
-        return revisions_to_execute
+            exit(1)
 
     def transform_document(self, doc):
         # by default, don't transform'
@@ -114,11 +135,14 @@ class BaseMigration:
 
     def reindex(self):
         # Exit if source_index doesn't exist'
-        if not self.source_client.indices.exists(
-            index=self.config.source_index,
+        if (
+            self.config.source_index is not None
+            and not self.source_client.indices.exists(
+                index=self.config.source_index,
+            )
         ):
-            print("Source index " + self.config.source_index + " not exists")
-            typer.Exit(0)
+            print("Source index " + self.config.source_index + " not exist.")
+            exit(1)
 
         # If the destination index does not exist, create it with the desired mappings
         if not self.source_client.indices.exists(index=self.config.destination_index):
@@ -131,6 +155,10 @@ class BaseMigration:
                 index=self.config.destination_index,
                 body=self.config.destination_index_body,
             )
+
+        if self.config.source_index is None:
+            print("Source index was None, skipping reindexing")
+            return
 
         if self.config.language == Language.painless:
             self.reindex_painless()
@@ -200,21 +228,6 @@ class BaseMigration:
             code = file.read()
             exec(code, globals())
 
-    def create_destination_index_if_not_exists(self):
-        latest_revision_file = self.get_revisions()[-1]
-        file_path = os.path.join(os.getcwd(), 'migrations/versions', latest_revision_file)
-
-        self.read_and_exec_file(file_path)
-        variables = globals()
-
-        if variables["config"].language == Language.painless == Language.painless:
-            index = variables["REINDEX_BODY"]["dest"]["index"]
-        else:
-            index = variables["DESTINATION_INDEX"]
-
-        if not self.source_client.indices.exists(index):
-            self.source_client.indices.create(index=index, body=variables["DESTINATION_INDEX_BODY"])
-
     def handle_migration(self):
         revisions_to_execute = self.get_revisions_to_execute()
 
@@ -222,17 +235,14 @@ class BaseMigration:
             print(f"Revisions to be executed: {revisions_to_execute}")
             path = os.getcwd()
             for revision_file in revisions_to_execute:
-                file_path = os.path.join(path, 'migrations/versions', revision_file)
+                file_path = os.path.join(path, "migrations/versions", revision_file)
                 print(file_path)
                 self.read_and_exec_file(file_path)
                 globals()["reindex"]()
                 new_version = self.extract_version_from_file_name(revision_file)
                 self.update_migration_version(new_version)
-        elif len(revisions_to_execute) == 0 and len(self.get_revisions()) > 0:
-            self.create_destination_index_if_not_exists()
         else:
-            print("Reindex not needed. Exiting.")
-            exit()
+            print("All revisions are up to date.")
 
     def extract_version_from_file_name(self, file_name):
         self.valid_file_name(file_name)
@@ -254,9 +264,9 @@ class BaseMigration:
 
     @staticmethod
     def valid_file_name(file_name: str):
-        if file_name.count(".") > 2:
+        if file_name.count(".") > 1:
             print(f'[bold red]found dots or numbers in file "{file_name}"[/bold red]')
-            raise typer.Exit(1)
+            exit(1)
 
     def create_revision(self, m: str, l: Language = Language.painless):
         highest_version = self.get_local_migration_version()
