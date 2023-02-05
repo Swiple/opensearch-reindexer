@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "opensearch-reindexer"
-version = "1.0.1"
+version = "2.0.0"
 description = "`opensearch-reindex` is a Python library that serves to help streamline reindexing data from one OpenSearch index to another."
 authors = ["Kenton Parton <kparton@swiple.io>"]
 readme = "README.md"
