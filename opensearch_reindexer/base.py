@@ -49,6 +49,18 @@ class BaseMigration:
             config.source_index = config.reindex_body["source"]["index"]
             config.destination_index = config.reindex_body["dest"]["index"]
 
+    def on_setup(self):
+        pass
+
+    def before_revision(self):
+        pass
+
+    def after_revision(self):
+        pass
+
+    def on_complete(self):
+        pass
+
     def get_revisions(self):
         """Returns an ordered list of revisions."""
         return sorted(
@@ -238,17 +250,22 @@ class BaseMigration:
         revisions_to_execute = self.get_revisions_to_execute()
 
         if len(revisions_to_execute) > 0:
+            self.on_setup()
             print(f"Revisions to be executed: {revisions_to_execute}")
             path = os.getcwd()
             for revision_file in revisions_to_execute:
                 file_path = os.path.join(path, "migrations/versions", revision_file)
                 print(file_path)
                 self.read_and_exec_file(file_path)
-                globals()["reindex"]()
+                migration = Migration(config)
+                migration.before_revision()
+                migration.reindex()
+                migration.after_revision()
                 new_version = self.extract_version_from_file_name(revision_file)
                 self.update_migration_version(new_version)
         else:
             print("All revisions are up to date.")
+        self.on_complete()
 
     def extract_version_from_file_name(self, file_name):
         self.valid_file_name(file_name)

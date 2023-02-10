@@ -52,10 +52,6 @@ config = Config(
     language=Language.python,
 )
 
-
-def reindex():
-    Migration(config).reindex()
-
     """
     )
     Path("./migrations/migration_template_painless.py").write_text(
@@ -68,15 +64,19 @@ REINDEX_BODY = {
 DESTINATION_INDEX_BODY = None
 
 
+class Migration(BaseMigration):
+    def before_revision(self):
+        pass
+
+    def after_revision(self):
+        pass
+
+
 config = Config(
     reindex_body=REINDEX_BODY,
     destination_index_body=DESTINATION_INDEX_BODY,
     language=Language.painless,
 )
-
-
-def reindex():
-    BaseMigration(config).reindex()
 
         """
     )

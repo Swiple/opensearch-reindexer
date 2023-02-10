@@ -468,6 +468,90 @@ class TestOpensearchReindexer:
             index=REINDEXER_VERSION,
         ) == {"versionNum": 1}
 
+    def test_should_invoke_hooks_in_order(self, clean_up, load_data):
+        import opensearch_reindexer as osr
+
+        osr.init()
+        osr.init_index()
+
+        osr.revision("revision_1")
+        reindex_body_source = '"source": {"index": "source"},'
+        reindex_body_destination = '"dest": {"index": "destination"},'
+
+        modify_revision_file(
+            file_name="1_revision_1",
+            modifications=[
+                [
+                    reindex_body_source,
+                    f'"source": {{"index": "{REINDEXER_SOURCE_INDEX}"}},',
+                ],
+                [
+                    reindex_body_destination,
+                    f'"dest": {{"index": "{REINDEXER_REVISION_1}"}},',
+                ],
+                [
+                    "DESTINATION_INDEX_BODY = None",
+                    f"DESTINATION_INDEX_BODY = {REVISION_ONE_MAPPINGS}",
+                ],
+            ],
+        )
+
+        string_to_modify = """class Migration(BaseMigration):
+    def before_revision(self):
+        pass
+
+    def after_revision(self):
+        pass"""
+
+        replacement_string = """class Migration(BaseMigration):
+    def before_revision(self):
+        alias_name = "my_alias"
+        index_name = self.config.source_index
+
+        # Create the alias
+        self.destination_client.indices.put_alias(index=index_name, name=alias_name)
+
+    def after_revision(self):
+        alias_name = "my_alias"
+
+        # Verify that the alias was created
+        aliases = self.destination_client.indices.get_alias(name=alias_name)
+        assert self.config.source_index in aliases
+
+        # Update the alias to point to the new index
+        self.destination_client.indices.update_aliases(body={
+            "actions": [
+                {
+                    "remove": {
+                        "index": self.config.source_index,
+                        "alias": alias_name
+                    }
+                },
+                {
+                    "add": {
+                        "index": self.config.destination_index,
+                        "alias": alias_name
+                    }
+                }
+            ]
+        })
+"""
+        modify_revision_file(
+            file_name="1_revision_1",
+            modifications=[
+                [string_to_modify, replacement_string],
+            ],
+        )
+
+        osr.run()
+
+        source_client = get_os_client()
+
+        aliases = source_client.indices.get_alias(name="my_alias")
+        assert REINDEXER_REVISION_1 in aliases
+
+
+
     def test_setup_and_run_revisions_python(self, clean_up, load_data):
         import opensearch_reindexer as osr
 
