@@ -3,7 +3,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, List
+from typing import List, Optional
 
 import opensearchpy.exceptions
 from opensearchpy import OpenSearch
@@ -35,7 +35,11 @@ class BaseMigration:
 
         from opensearch_reindexer.db import dynamically_import_migrations
 
-        source_client, destination_client, version_control_index = dynamically_import_migrations()
+        (
+            source_client,
+            destination_client,
+            version_control_index,
+        ) = dynamically_import_migrations()
 
         self.source_client: OpenSearch = source_client
         self.destination_client: OpenSearch = destination_client
@@ -106,17 +110,19 @@ class BaseMigration:
             revision_files = self.get_revisions()
             if not revision_files:
                 print(
-                    'No revision files found in "./migrations/versions".\nPlease create one by running: "reindexer revision"')
+                    'No revision files found in "./migrations/versions".\nPlease create one by running: "reindexer revision"'
+                )
                 exit(1)
 
             remote_version_num = self.get_remote_version_num()
             revisions_to_execute = [
-                file for file in revision_files
+                file
+                for file in revision_files
                 if int(re.search(r"\d+", file).group()) > remote_version_num
             ]
 
             if not revisions_to_execute:
-                print('No new revisions found.')
+                print("No new revisions found.")
                 exit(1)
 
             return revisions_to_execute

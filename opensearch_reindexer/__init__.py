@@ -4,7 +4,7 @@ from pathlib import Path
 import typer
 from rich import print
 
-from opensearch_reindexer.base import BaseMigration, Language, Config
+from opensearch_reindexer.base import BaseMigration, Language
 
 app = typer.Typer()
 
@@ -184,6 +184,15 @@ def run():
     Runs 0 or many migrations returned by `BaseMigration().get_revisions_to_execute()
     """
     verify_reindexer_init_execution()
+    from opensearch_reindexer.db import dynamically_import_migrations
+
+    source_client, _, version_control_index = dynamically_import_migrations()
+
+    if not source_client.indices.exists(index=version_control_index):
+        print(
+            f'Version control index "{version_control_index}" does not exist.\nCreate it by running "reindexer init-index"'
+        )
+        exit(1)
     BaseMigration().handle_migration()
 
 

@@ -119,6 +119,21 @@ class TestOpensearchReindexer:
         # assert that the correct exit code was used
         assert excinfo.value.code == 1
 
+    def test_should_show_prerequisite_steps_to_reindexer_run_two(self, clean_up):
+        import opensearch_reindexer as osr
+
+        source_client = get_os_client()
+
+        osr.init()
+        osr.init_index()
+        osr.revision("revision_1")
+        delete_index(source_client, REINDEXER_VERSION)
+        with pytest.raises(SystemExit) as excinfo:
+            osr.run()
+
+        # assert that the correct exit code was used
+        assert excinfo.value.code == 1
+
     def test_should_not_allow_invalid_revisions_file_names(self, clean_up):
         import opensearch_reindexer as osr
 
@@ -153,7 +168,9 @@ class TestOpensearchReindexer:
         # assert that the correct exit code was used
         assert excinfo.value.code == 1
 
-    def test_should_update_reindexer_version_in_source_and_destination_cluster_when_hosts_are_different(self, clean_up, load_data):
+    def test_should_update_reindexer_version_in_source_and_destination_cluster_when_hosts_are_different(
+        self, clean_up, load_data
+    ):
         import opensearch_reindexer as osr
 
         source_client = get_os_client()
@@ -263,7 +280,6 @@ class TestOpensearchReindexer:
             client=source_client,
             index=MODIFIED_VERSION_CONTROL_INDEX_NAME,
         ) == {"versionNum": 3}
-
 
     def test_should_exit_when_source_index_does_not_exist_python(self, clean_up):
         import opensearch_reindexer as osr
@@ -741,7 +757,9 @@ def modify_destination_client_env_file():
     ssl_show_warn=False,
 )
         """
-        contents = contents.replace("destination_client = source_client", destination_client)
+        contents = contents.replace(
+            "destination_client = source_client", destination_client
+        )
 
     # Open the file in write mode and write the modified contents back to the file
     with open(f"./migrations/env.py", "w") as f:
@@ -752,8 +770,12 @@ def modify_version_control_index():
     # Open the file in read-only mode and read its contents into a string
     with open(f"./migrations/env.py", "r") as f:
         contents = f.read()
-        version_control_index = f'VERSION_CONTROL_INDEX = "{MODIFIED_VERSION_CONTROL_INDEX_NAME}"'
-        contents = contents.replace('VERSION_CONTROL_INDEX = "reindexer_version"', version_control_index)
+        version_control_index = (
+            f'VERSION_CONTROL_INDEX = "{MODIFIED_VERSION_CONTROL_INDEX_NAME}"'
+        )
+        contents = contents.replace(
+            'VERSION_CONTROL_INDEX = "reindexer_version"', version_control_index
+        )
 
     # Open the file in write mode and write the modified contents back to the file
     with open(f"./migrations/env.py", "w") as f:
@@ -761,6 +783,4 @@ def modify_version_control_index():
 
 
 def search(client: OpenSearch, index: str) -> dict:
-    return client.search(index=index, size=1, body={})["hits"]["hits"][
-        0
-    ]["_source"]
+    return client.search(index=index, size=1, body={})["hits"]["hits"][0]["_source"]
