@@ -247,6 +247,12 @@ class BaseMigration:
             exec(code, globals())
 
     def handle_migration(self):
+        if not self.source_client.indices.exists(index=self.version_control_index):
+            print(
+                f'Version control index "{self.version_control_index}" does not exist.\nCreate it by running "reindexer init-index"'
+            )
+            exit(1)
+
         revisions_to_execute = self.get_revisions_to_execute()
 
         if len(revisions_to_execute) > 0:
@@ -256,11 +262,16 @@ class BaseMigration:
             for revision_file in revisions_to_execute:
                 file_path = os.path.join(path, "migrations/versions", revision_file)
                 print(file_path)
+
+                # Dynamically import the revision file
                 self.read_and_exec_file(file_path)
+
                 migration = Migration(config)
                 migration.before_revision()
+                # Execute migration
                 migration.reindex()
                 migration.after_revision()
+
                 new_version = self.extract_version_from_file_name(revision_file)
                 self.update_migration_version(new_version)
         else:
