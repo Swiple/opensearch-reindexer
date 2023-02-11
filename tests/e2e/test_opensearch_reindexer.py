@@ -7,7 +7,7 @@ from opensearchpy import OpenSearch
 from opensearchpy.exceptions import NotFoundError
 from opensearchpy.helpers import bulk
 
-from opensearch_reindexer import Language
+from opensearch_reindexer import Language, helper
 
 REINDEXER_VERSION = "reindexer_version"
 REINDEXER_SOURCE_INDEX = "reindexer_source_index"
@@ -15,6 +15,9 @@ REINDEXER_REVISION_1 = "reindexer_revision_1"
 REINDEXER_REVISION_2 = "reindexer_revision_2"
 REINDEXER_REVISION_3 = "reindexer_revision_3"
 MODIFIED_VERSION_CONTROL_INDEX_NAME = "modified_reindexer_version"
+ALIAS = "my-alias"
+ALIAS_INDEX = "my-index"
+ALIAS_MODIFIED_INDEX = "my-modified-index"
 
 REVISION_ONE_MAPPINGS = {
     "mappings": {
@@ -54,6 +57,10 @@ def clean_up():
     delete_index(source_client, REINDEXER_REVISION_2)
     delete_index(source_client, REINDEXER_REVISION_3)
     delete_index(source_client, MODIFIED_VERSION_CONTROL_INDEX_NAME)
+    delete_index(source_client, ALIAS_INDEX)
+    delete_index(source_client, ALIAS_MODIFIED_INDEX)
+    source_client.indices.delete_alias(name=ALIAS, index=ALIAS_INDEX, ignore=[404])
+    source_client.indices.delete_alias(name=ALIAS, index=ALIAS_MODIFIED_INDEX, ignore=[404])
 
     if os.path.exists("./migrations"):
         shutil.rmtree("./migrations")
@@ -63,6 +70,45 @@ def clean_up():
 def load_data():
     source_client = get_os_client()
     load_reindexer_source_index(source_client, REINDEXER_SOURCE_INDEX)
+
+
+class TestOpensearchReindexerHelper:
+    def test_create_or_update_alias_creates_alias(self, clean_up):
+        # Test that the function creates an alias if it doesn't exist
+        client = get_os_client()
+        client.indices.create(index=ALIAS_INDEX)
+        helper.create_or_update_alias(client, ALIAS, ALIAS_INDEX)
+        aliases = json.dumps(client.indices.get_alias(name=ALIAS))
+        assert ALIAS in aliases
+        assert ALIAS_INDEX in aliases
+
+    def test_create_or_update_alias_updates_alias(self, clean_up):
+        # Test that the function updates an existing alias
+        client = get_os_client()
+        client.indices.create(index=ALIAS_INDEX)
+        helper.create_or_update_alias(client, ALIAS, ALIAS_INDEX)
+
+        client.indices.create(index=ALIAS_MODIFIED_INDEX)
+        helper.create_or_update_alias(client, ALIAS, ALIAS_MODIFIED_INDEX)
+        aliases = json.dumps(client.indices.get_alias(name=ALIAS))
+
+        assert ALIAS in aliases
+        assert ALIAS_INDEX not in aliases
+        assert ALIAS_MODIFIED_INDEX in aliases
+
+    def test_create_or_update_alias_returns_none(self, clean_up):
+        # Test that the function returns None
+        client = get_os_client()
+        client.indices.create(index=ALIAS_INDEX)
+        result = helper.create_or_update_alias(client, ALIAS, ALIAS_INDEX)
+        assert result is None
+
+    def test_should_increment_index(self, clean_up):
+        inputs = ["my-index", "my-index-0", "my-index-longer", "my-index-9", "my-index-", "-my-index"]
+        outputs = ["my-index-0", "my-index-1", "my-index-longer-0", "my-index-10", "my-index--0", "-my-index-0"]
+
+        for i, val in enumerate(inputs):
+            assert helper.increment_index(val) == outputs[i]
 
 
 class TestOpensearchReindexer:
@@ -549,8 +595,6 @@ class TestOpensearchReindexer:
 
         aliases = source_client.indices.get_alias(name="my_alias")
         assert REINDEXER_REVISION_1 in aliases
-
-
 
     def test_setup_and_run_revisions_python(self, clean_up, load_data):
         import opensearch_reindexer as osr
