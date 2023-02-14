@@ -154,7 +154,7 @@ class TestOpensearchReindexer:
             osr.init_index()
 
         # assert that the correct exit code was used
-        assert excinfo.value.code == 1
+        assert excinfo.value.code == 0
 
     def test_should_show_prerequisite_steps_to_reindexer_run(self, clean_up):
         import opensearch_reindexer as osr
@@ -179,6 +179,38 @@ class TestOpensearchReindexer:
 
         # assert that the correct exit code was used
         assert excinfo.value.code == 1
+
+    def test_no_new_revisions_found(self, clean_up, load_data):
+        import opensearch_reindexer as osr
+
+        osr.init()
+        osr.init_index()
+        osr.revision("revision_1")
+
+        reindex_body_source = '"source": {"index": "source"},'
+        reindex_body_destination = '"dest": {"index": "destination"},'
+
+        modify_revision_file(
+            file_name="1_revision_1",
+            modifications=[
+                [
+                    reindex_body_source,
+                    f'"source": {{"index": "{REINDEXER_SOURCE_INDEX}"}},',
+                ],
+                [
+                    reindex_body_destination,
+                    f'"dest": {{"index": "{REINDEXER_REVISION_1}"}},',
+                ],
+            ],
+        )
+
+        osr.run()
+
+        with pytest.raises(SystemExit) as excinfo:
+            osr.run()
+
+        # assert that the correct exit code was used
+        assert excinfo.value.code == 0
 
     def test_should_not_allow_invalid_revisions_file_names(self, clean_up):
         import opensearch_reindexer as osr
