@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Literal, Union
 
 import typer
 from rich import print
@@ -52,7 +51,7 @@ config = Config(
     destination_index_body=DESTINATION_INDEX_BODY,
     language=Language.python,
 )
-Migration(config).reindex()
+
     """
     )
     Path("./migrations/migration_template_painless.py").write_text(
@@ -65,12 +64,20 @@ REINDEX_BODY = {
 DESTINATION_INDEX_BODY = None
 
 
+class Migration(BaseMigration):
+    def before_revision(self):
+        pass
+
+    def after_revision(self):
+        pass
+
+
 config = Config(
     reindex_body=REINDEX_BODY,
     destination_index_body=DESTINATION_INDEX_BODY,
     language=Language.painless,
 )
-BaseMigration(config).reindex()
+
         """
     )
     Path("./migrations/env.py").write_text(
@@ -84,6 +91,7 @@ OPENSEARCH_PASSWORD = "admin"
 OPENSEARCH_USE_SSL = True
 OPENSEARCH_VERIFY_CERTS = False
 
+VERSION_CONTROL_INDEX = "reindexer_version"
 
 # Create the client with SSL/TLS enabled, but hostname verification disabled.
 source_client = OpenSearch(
@@ -105,39 +113,27 @@ def init_index():
     """
     Initializes the 'reindexer_version' index in the 'source_client' with the highest local revision version number.
     """
-    # First check if `reindexer init` has been run.
-    if not os.path.exists("migrations/versions"):
-        print(
-            'No migrations/versions directory found.\n\nInitialize your project first:\n1. "reindexer init"'
-        )
-        raise typer.Exit(1)
-
+    verify_reindexer_init_execution()
     from opensearch_reindexer.db import dynamically_import_migrations
 
-    source_client, _ = dynamically_import_migrations()
-    version_index = "reindexer_version"
+    source_client, _, version_control_index = dynamically_import_migrations()
 
-    if source_client.indices.exists(index=version_index):
-        source_client.search(index=version_index)
-        print(f'[bold red]Index "{version_index}" already exists[/bold red]')
-        raise typer.Exit(1)
+    if source_client.indices.exists(index=version_control_index):
+        source_client.search(index=version_control_index)
+        print(f'Index "{version_control_index}" already initialized.')
+        exit(0)
 
     source_client.indices.create(
-        index=version_index,
+        index=version_control_index,
     )
-    highest_version = BaseMigration().get_local_migration_version()
 
-    if highest_version != 0:
-        print(
-            "Local revisions were detected. We assume you have migrated from one OpenSearch Cluster to another."
-        )
-
-    print(f'"versionNum" was initialized to {highest_version}')
+    version: int = 0
     source_client.index(
-        index=version_index,
-        body={"versionNum": highest_version},
+        index=version_control_index,
+        body={"versionNum": version},
         refresh="wait_for",
     )
+    print(f'"versionNum" was initialized to {version}')
 
 
 @app.command()
@@ -155,12 +151,12 @@ def revision(
     """
     try:
         lang = Language[language]
+        message = message.replace(" ", "_")
+        BaseMigration.valid_file_name(f"{message}.py")
+        BaseMigration().create_revision(message, lang)
     except KeyError:
-        print(f'Expected a language of "painless" or "python" but got {language}')
-        raise typer.Exit(1)
-    message = message.replace(" ", "_")
-    BaseMigration.valid_file_name(message)
-    BaseMigration().create_revision(message, lang)
+        print(f'Expected a language of "painless" or "python" but got "{language}"')
+        exit(1)
 
 
 @app.command()
@@ -168,10 +164,16 @@ def list():
     """
     Returns ordered list of revisions that have not been executed.
     """
+    verify_reindexer_init_execution()
     from opensearch_reindexer.db import dynamically_import_migrations
 
-    source_client, _ = dynamically_import_migrations()
+    source_client, _, _ = dynamically_import_migrations()
     revisions = BaseMigration().get_revisions_to_execute()
+
+    if len(revisions) == 0:
+        print("You are up to date. No revisions need to be executed.")
+        exit(0)
+
     for rev in revisions:
         print(rev)
 
@@ -181,4 +183,13 @@ def run():
     """
     Runs 0 or many migrations returned by `BaseMigration().get_revisions_to_execute()
     """
+    verify_reindexer_init_execution()
     BaseMigration().handle_migration()
+
+
+def verify_reindexer_init_execution():
+    if not os.path.exists("migrations/versions"):
+        print(
+            'No migrations/versions directory found.\n\nInitialize your project first:\n1. "reindexer init"'
+        )
+        exit(1)
