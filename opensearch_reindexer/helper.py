@@ -18,10 +18,17 @@ def create_or_update_alias(client: OpenSearch, alias: str, index_name: str) -> N
     if not client.indices.exists_alias(name=alias):
         client.indices.put_alias(name=alias, index=index_name)
     else:
-        client.indices.update_aliases(body={"actions": [
-            {"remove": {"index": i, "alias": alias} for i in client.indices.get_alias(name=alias)},
-            {"add": {"index": index_name, "alias": alias}}
-        ]})
+        client.indices.update_aliases(
+            body={
+                "actions": [
+                    {
+                        "remove": {"index": i, "alias": alias}
+                        for i in client.indices.get_alias(name=alias)
+                    },
+                    {"add": {"index": index_name, "alias": alias}},
+                ]
+            }
+        )
 
 
 def increment_index(index_name) -> str:

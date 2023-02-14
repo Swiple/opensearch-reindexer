@@ -60,7 +60,9 @@ def clean_up():
     delete_index(source_client, ALIAS_INDEX)
     delete_index(source_client, ALIAS_MODIFIED_INDEX)
     source_client.indices.delete_alias(name=ALIAS, index=ALIAS_INDEX, ignore=[404])
-    source_client.indices.delete_alias(name=ALIAS, index=ALIAS_MODIFIED_INDEX, ignore=[404])
+    source_client.indices.delete_alias(
+        name=ALIAS, index=ALIAS_MODIFIED_INDEX, ignore=[404]
+    )
 
     if os.path.exists("./migrations"):
         shutil.rmtree("./migrations")
@@ -104,8 +106,22 @@ class TestOpensearchReindexerHelper:
         assert result is None
 
     def test_should_increment_index(self, clean_up):
-        inputs = ["my-index", "my-index-0", "my-index-longer", "my-index-9", "my-index-", "-my-index"]
-        outputs = ["my-index-0", "my-index-1", "my-index-longer-0", "my-index-10", "my-index--0", "-my-index-0"]
+        inputs = [
+            "my-index",
+            "my-index-0",
+            "my-index-longer",
+            "my-index-9",
+            "my-index-",
+            "-my-index",
+        ]
+        outputs = [
+            "my-index-0",
+            "my-index-1",
+            "my-index-longer-0",
+            "my-index-10",
+            "my-index--0",
+            "-my-index-0",
+        ]
 
         for i, val in enumerate(inputs):
             assert helper.increment_index(val) == outputs[i]
