@@ -135,7 +135,7 @@ class BaseMigration:
 
             if not revisions_to_execute:
                 print("No new revisions found.")
-                exit(1)
+                exit(0)
 
             return revisions_to_execute
         except FileNotFoundError:

@@ -120,8 +120,8 @@ def init_index():
 
     if source_client.indices.exists(index=version_control_index):
         source_client.search(index=version_control_index)
-        print(f'Index "{version_control_index}" already exists')
-        exit(1)
+        print(f'Index "{version_control_index}" already initialized.')
+        exit(0)
 
     source_client.indices.create(
         index=version_control_index,
