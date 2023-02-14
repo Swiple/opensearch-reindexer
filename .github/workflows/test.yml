@@ -2,10 +2,11 @@ name: Run tests
 
 on:
   pull_request:
-    types: [opened, reopened, edited]
+    branches:
+      - "*"
   push:
     branches:
-      - "main"
+      - "*"
 
 jobs:
   e2e-test:
